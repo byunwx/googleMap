@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Directions service (complex)</title>
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #floating-panel {
+        position: absolute;
+        top: 10px;
+        left: 25%;
+        z-index: 5;
+        background-color: #fff;
+        padding: 5px;
+        border: 1px solid #999;
+        text-align: center;
+        font-family: 'Roboto','sans-serif';
+        line-height: 30px;
+        padding-left: 10px;
+      }
+      #warnings-panel {
+        width: 100%;
+        height:10%;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="floating-panel">
+      <button id="emptyBtn">empty all</button>
+    <b>input:location</b>
+      <form class="" action="index.html" method="post">
+        <input type="text" id="address-input" placeholder="enter address">
+        <input type="text" id="address-marker" placeholder="name your marker">
+        <input id="add_startInput" type="submit" value="ADD START" data-address="start-input" data-marker="start-marker" class="submitBtn">
+        <input id="add_endInput" type="submit" value="ADD END" data-address="end-input" data-marker="end-marker" class="submitBtn">
+      </form>
+    <b>Start: </b>
+    <select id="start">
+      <option value="penn station, new york, ny">Penn Station</option>
+      <option value="grand central station, new york, ny">Grand Central Station</option>
+    </select>
+    <b>End: </b>
+    <select id="end">
+      <option value="260 Broadway New York NY 10007">City Hall</option>
+      <option value="W 49th St & 5th Ave, New York, NY 10020">Rockefeller Center</option>
+    </select>
+    </div>
+    <div id="map"></div>
+    <div id="warnings-panel"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script>
+      var startArr=["penn station, new york, ny"];
+      var startMarkerArr=["Penn Station"];
+      var endArr=["260 Broadway New York NY 10007"];
+      var endMarkerArr=["City Hall"];
+      var emptybutton =function(){
+        $("#emptyBtn").on("click", function(){
+          startArr=[];
+          startMarkerArr=[];
+          endArr=[];
+          endMarkerArr=[];
+          localStorage.clear();
+          endArr.push("none");
+          endMarkerArr.push("choose your Marker");
+          startArr.push("none");
+          startMarkerArr.push("choose your Marker");
+          startOptionGenerator();
+          endOptionGenerator();
+        })
+      }
+      var startOptionGenerator= function (){
+        $("#start").empty();
+        for (var i = 0; i < startArr.length; i++) {
+          var newOption=$("<option>").text(startMarkerArr[i]);
+          newOption.attr("value", startArr[i]);
+          $("#start").prepend(newOption);
+        }
+      }
+      var endOptionGenerator= function (){
+        $("#end").empty();
+        for (var i = 0; i < startArr.length; i++) {
+          var newOption=$("<option>").text(endMarkerArr[i]);
+          newOption.attr("value", endArr[i]);
+          $("#end").prepend(newOption);
+        }
+      }
+      var getLocalstorage= function (){
+        var local = confirm("there is saved location do you want to bring it back?")
+        if (local) {
+          console.log(localStorage.getItem("startArrLocal"));
+          startArr=JSON.parse(localStorage.getItem("startArrLocal"));
+          startMarkerArr=JSON.parse(localStorage.getItem("startMarkerArrLocal"));
+          endArr=JSON.parse(localStorage.getItem("endArrLocal"));
+          endMarkerArr=JSON.parse(localStorage.getItem("endMarkerArrLocal"));;
+          startOptionGenerator();
+          endOptionGenerator();
+        }else{
+          localStorage.clear();
+        }
+      }
+      var onClickSubmit= function(){
+        console.log("function onclick activatied")
+
+        $(".submitBtn").on("click", function(event){
+          console.log("function onclick working")
+          event.preventDefault();
+          if (this.id=="add_startInput") {
+            startArr.push($("#address-input").val().trim());
+            startMarkerArr.push($("#address-marker").val().trim());
+            localStorage.setItem("startArrLocal", JSON.stringify(startArr));
+            localStorage.setItem("startMarkerArrLocal", JSON.stringify(startMarkerArr));
+            startOptionGenerator();
+          }else if (this.id=="add_endInput") {
+            endArr.push($("#address-input").val().trim());
+            endMarkerArr.push($("#address-marker").val().trim());
+            localStorage.setItem("endArrLocal", JSON.stringify(endArr));
+            localStorage.setItem("endMarkerArrLocal", JSON.stringify(endMarkerArr));
+            endOptionGenerator();
+          }else{
+            console.log("error on onClickSubmit")
+          }
+        });
+
+      }
+
+      function initMap() {
+        var markerArray = [];
+
+        // Instantiate a directions service.
+        var directionsService = new google.maps.DirectionsService;
+
+        // Create a map and center it on Manhattan.
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 13,
+          center: {lat: 40.771, lng: -73.974}
+        });
+
+        // Create a renderer for directions and bind it to the map.
+        var directionsDisplay = new google.maps.DirectionsRenderer({map: map});
+
+        // Instantiate an info window to hold step text.
+        var stepDisplay = new google.maps.InfoWindow;
+
+        // Display the route between the initial start and end selections.
+        calculateAndDisplayRoute(
+            directionsDisplay, directionsService, markerArray, stepDisplay, map);
+        // Listen to change events from the start and end lists.
+        var onChangeHandler = function() {
+          calculateAndDisplayRoute(
+              directionsDisplay, directionsService, markerArray, stepDisplay, map);
+        };
+        document.getElementById('start').addEventListener('change', onChangeHandler);
+        document.getElementById('end').addEventListener('change', onChangeHandler);
+      }
+
+      function calculateAndDisplayRoute(directionsDisplay, directionsService,
+          markerArray, stepDisplay, map) {
+        // First, remove any existing markers from the map.
+        for (var i = 0; i < markerArray.length; i++) {
+          markerArray[i].setMap(null);
+        }
+
+        // Retrieve the start and end locations and create a DirectionsRequest using
+        // WALKING directions.
+        directionsService.route({
+          origin: document.getElementById('start').value,
+          destination: document.getElementById('end').value,
+          travelMode: 'WALKING'
+        }, function(response, status) {
+          // Route the directions and pass the response to a function to create
+          // markers for each step.
+          if (status === 'OK') {
+            document.getElementById('warnings-panel').innerHTML =
+                '<b>' + response.routes[0].warnings + '</b>';
+            directionsDisplay.setDirections(response);
+            showSteps(response, markerArray, stepDisplay, map);
+          } else {
+            window.alert('Directions request failed due to ' + status);
+          }
+        });
+      }
+
+
+      function showSteps(directionResult, markerArray, stepDisplay, map) {
+        // For each step, place a marker, and add the text to the marker's infowindow.
+        // Also attach the marker to an array so we can keep track of it and remove it
+        // when calculating new routes.
+        var myRoute = directionResult.routes[0].legs[0];
+        for (var i = 0; i < myRoute.steps.length; i++) {
+          var marker = markerArray[i] = markerArray[i] || new google.maps.Marker;
+          marker.setMap(map);
+          marker.setPosition(myRoute.steps[i].start_location);
+          attachInstructionText(
+              stepDisplay, marker, myRoute.steps[i].instructions, map);
+        }
+      }
+
+      function attachInstructionText(stepDisplay, marker, text, map) {
+        google.maps.event.addListener(marker, 'click', function() {
+          // Open an info window when the marker is clicked on, containing the text
+          // of the step.
+          stepDisplay.setContent(text);
+          stepDisplay.open(map, marker);
+        });
+      }
+      if (localStorage.getItem("startArrLocal")||localStorage.getItem("endArrLocal")) {
+        getLocalstorage();
+      } else{
+        console.log("firstimer");
+      }
+      onClickSubmit();
+      emptybutton();
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBIts1uuTGKTvr8EQzB6lZ4HH4tiEJAScw&callback=initMap">
+    </script>
+  </body>
+</html>
